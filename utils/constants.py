@@ -1,18 +1,9 @@
-from goodsList import goods_list
-
 # economy variables
-CYCLES = 100
-AGENT_COUNT = 6
-GOODS_COUNT = len(goods_list)
+CYCLES = 1
+AGENT_COUNT = 3
 HOARD_QTY = 1
 HOARDER_FREQ = 5
-
-# agent variables
-INITIAL_QTY = 10
-PERISH_QTY = 1
-PRODUCTION_QTY = 4
-LOW_THRESHOLD = 1
-HIGH_THRESHOLD = 5
+HIGH_TO_LOW_RATIO = 3
 
 '''
     notes:

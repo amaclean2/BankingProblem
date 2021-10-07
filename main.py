@@ -1,17 +1,46 @@
-# create agents
-# create goods
-# create services
+from inventory import Inventory
+from totalInventory import total_inventory
+from agent import agents, populate_agents, trade
+from constants import TOTAL_DAYS
+from logger import logger, clear_logs
+        
+# simulation data
 
-# goods and services are classes all with a value and some inflation
-#   - inflation starting at 0, but we can change that
-#   - goods and services are consumable after a certain number of cycles in the simulation
 
-# angents are classes
-#   - agents start with a certain amount of money
-#   - agents have a necessary amount of a type of good
-#   - some agents make some goods
+def iterate_agents(day):
+    total_inventory.clear_agent_statuses()
+    for name, agent in agents.items():
+        agent.react_to_markets(day)
+        agent.consume_energy()
+        agent.produce(day)
+        agent.eat()
+        agent.post_status()
 
-# create simulation where agents exchange goods and services for money
+def iterate_time():
+    for day in range(TOTAL_DAYS):
+        logger(f"Today is day {day}")
+        total_inventory.print_prices()
+        iterate_agents(day)
+        logger("\nQuantities Before Trading")
+        view_agents()
+        trade()
+        total_inventory.adjust_prices(day)
+        logger("\nQuantities After Trading")
+        view_agents()
+        logger("Total Inventories")
+        total_inventory.view_total_inventories()
+        # agents do things
 
-import economy
-economy.run_sim()
+def view_agents():
+    for name, agent in agents.items():
+        agent.get_quantities()
+
+    logger("\n")
+
+def run_sim():
+    clear_logs()
+    populate_agents()
+    total_inventory.populate_buckets()
+    iterate_time()
+
+run_sim()

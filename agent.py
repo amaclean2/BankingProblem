@@ -1,8 +1,10 @@
 from inventory import Inventory
 from totalInventory import total_inventory
 from constants import AGENT_COUNT
-from utils import prices, qty_to_make_products, add_qty_to_make_products
+from commodities import prices, qty_to_make_products, get_commodity_to_start
+from utils import add_qty_to_make_products, round_qties, cannot_be_made
 from logger import logger
+import math as m
 
 
 class Agent(Inventory):
@@ -10,11 +12,12 @@ class Agent(Inventory):
         super().__init__()
         self.name = name
         self.energy = 128
-        self.commodity_produced = "wheat"
+        self.commodity_produced = get_commodity_to_start(self.name)
         self.task_energy = 8
         self.resources_out = []
 
     def build_resources_out(self):
+        # the resources an agent is out of
         for name, bucket in self.buckets:
             if bucket.type != "type_three":
                 self.resources_out.append(name)
@@ -27,6 +30,19 @@ class Agent(Inventory):
     def switch_commodity_produced(self, new_commodity):
         self.commodity_produced = new_commodity
 
+    def grow_the_growables(self):
+        for name, bucket in self.buckets.items():
+            if bucket.type == "type_four":
+                for rn, resource in bucket.production_values.items():
+                    if self.buckets[rn].qty > resource["qty_used"]:
+                        pr_rate = resource["commodity_produced"]
+                        parents = self.buckets[rn].qty / resource["qty_used"]
+                        parents -= parents % 1
+                        total = pr_rate * parents
+                        
+                        bucket.qty += total
+                        total_inventory.update_total_inventories(total, name)
+
     def produce(self, day):
         # take resources and turn them into product
         # in this case the resource is land and the product is wheat
@@ -36,6 +52,12 @@ class Agent(Inventory):
         commodity_produced = self.buckets[self.commodity_produced]
         resources = commodity_produced.production_values
         # resources refers to the varibles defining using the resource
+
+        supplies = {}
+        lowest_ratio = ["", 1]
+        total_yield = 0
+
+        self.grow_the_growables()
 
         for resource_name, resource in resources.items():
             inventory_resource = self.buckets[resource_name]
@@ -48,47 +70,68 @@ class Agent(Inventory):
                     total_inventory.update_total_inventories(
                         inventory_resource.qty, resource_name)
 
-            if inventory_resource.qty > 0 and self.energy > self.task_energy:
-                production_rate = inventory_resource.qty / resource["qty_used"]
-                total_yield = resource["commodity_produced"] * production_rate
+            # supply accumulation
+            if total_yield == 0:
+                total_yield = resource["commodity_produced"]
 
-                # add new production to inventory
+            if inventory_resource.qty < resource["qty_used"]:
+                working_ratio = inventory_resource.qty / resource["qty_used"]
+                if working_ratio < lowest_ratio[1]:
+                    lowest_ratio = [resource_name, working_ratio]
+
+                supplies[resource_name] = inventory_resource.qty
+                self.account_for_resources(resource_name)
+            else:
+                supplies[resource_name] = resource["qty_used"]
+
+            add_qty_to_make_products(
+                resource_name,
+                self.commodity_produced,
+                resource["qty_used"]
+            )
+
+        if self.energy > self.task_energy and len(supplies) > 0:
+            if lowest_ratio[1] < 1:
+                # deal with not enough resources
+                for supply_name, supply_qty in supplies.items():
+                    if supply_name != lowest_ratio[0]:
+                        # rounding qty_used to the hundreds place cause this is getting ridiculous
+                        qty_used = round_qties(supply_qty * lowest_ratio[1])
+                        self.buckets[supply_name].qty -= qty_used
+                        # update total inventory
+                        total_inventory.update_total_inventories(
+                            -1 * qty_used,
+                            supply_name
+                        )
+                    else:
+                        self.buckets[supply_name].qty = 0
+                        # update total inventory
+                        total_inventory.update_total_inventories(
+                            -1 * supply_qty,
+                            supply_name
+                        )
+
+                total_yield = round_qties(total_yield * lowest_ratio[1])
                 commodity_produced.qty += total_yield
-                self.account_for_resources(self.commodity_produced)
 
-                # consume land primarily
-                if inventory_resource.type == "type_three":
-                    inventory_resource.consume_resource(
-                        day,
-                        resource["reuse_time"],
-                        resource["qty_used"] * production_rate
+                if total_yield > 0:
+                    self.consume_energy()
+            else:
+                # use up reseources
+                for supply_name, supply_qty in supplies.items():
+                    self.buckets[supply_name].qty -= supply_qty
+                    # update total inventory
+                    total_inventory.update_total_inventories(
+                        -1 * supply_qty,
+                        supply_name
                     )
-                # consume any other resource
-                else:
-                    inventory_resource.qty -= resource["qty_used"] * \
-                        production_rate
 
-                    if inventory_resource.qty == 0:
-                        self.account_for_resources(resource_name)
-
-                add_qty_to_make_products(
-                    resource_name,
-                    self.commodity_produced,
-                    resource["qty_used"]
-                )
-
+                # make product s
+                commodity_produced.qty += total_yield
                 self.consume_energy()
 
-                # add the new commodity produced to the total inventory
-                total_inventory.update_total_inventories(
-                    total_yield, self.commodity_produced
-                )
-
-                # remove the resource used from the total inventory
-                total_inventory.update_total_inventories(
-                    -1 * resource["qty_used"] * production_rate,
-                    resource_name
-                )
+            # udpate total_inventory
+            total_inventory.update_total_inventories(total_yield, self.commodity_produced)
 
     def account_for_resources(self, resource):
         if self.buckets[resource].qty == 0:
@@ -103,29 +146,19 @@ class Agent(Inventory):
         # if the agent is out of all supplies then they need to switch to 
         # making something from land
         if len(self.resources_out) >= len(self.buckets) - 1:
-            land = list(qty_to_make_products["land"])
-            if len(land) > 1 and land[0] == "total":
-                self.commodity_produced = land[1]
-        
-        # if the price of some commodity is greater than the one currently
-        # being produced then switch to that one
-        highest_price = "bread"
-        for name, price in prices.items():
-            if price > prices[highest_price] and self.buckets[name].type != "type_three":
-                highest_price = name
+            self.switch_commodity_produced(get_commodity_to_start(self.name))
+        else:
+            # if the price of some commodity is greater than the one currently
+            # being produced then switch to that one
+            highest_price = "bread"
+            for name, price in prices.items():
+                if price > prices[highest_price] and self.buckets[name].type not in cannot_be_made:
+                    highest_price = name
 
-        if prices[self.commodity_produced] < prices[highest_price]:
-            if day % (AGENT_COUNT * 2) == self.name * 2:
-                # this makes the agents switch what they produce more slowly
-                self.switch_commodity_produced(highest_price)
-
-    def form_food_list(self):
-        food_list = [] 
-        for name, bucket in total_inventory.buckets.items():
-            if bucket.type == "type_one" and bucket.qty > 0:
-                food_list.append(name)
-
-        return food_list
+            if prices[self.commodity_produced] < prices[highest_price]:
+                if day % AGENT_COUNT == self.name:
+                    # this makes the agents switch what they produce more slowly
+                    self.switch_commodity_produced(highest_price)
 
     def eat(self):
         quantities = total_inventory.solve_for_meal()

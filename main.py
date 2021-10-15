@@ -16,19 +16,22 @@ def iterate_agents(day):
         agent.eat()
         agent.post_status()
 
+def handle_agent_activities(day):
+    logger(f"Today is day {day}")
+    total_inventory.print_prices()
+    iterate_agents(day)
+    logger("\nQuantities Before Trading")
+    view_agents()
+    trade()
+    total_inventory.adjust_prices(day)
+    logger("\nQuantities After Trading")
+    view_agents()
+    logger("Total Inventories")
+    total_inventory.view_total_inventories()
+
 def iterate_time():
     for day in range(TOTAL_DAYS):
-        logger(f"Today is day {day}")
-        total_inventory.print_prices()
-        iterate_agents(day)
-        logger("\nQuantities Before Trading")
-        view_agents()
-        trade()
-        total_inventory.adjust_prices(day)
-        logger("\nQuantities After Trading")
-        view_agents()
-        logger("Total Inventories")
-        total_inventory.view_total_inventories()
+        handle_agent_activities(day)
         # agents do things
 
 def view_agents():

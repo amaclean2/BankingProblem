@@ -1,4 +1,8 @@
-from utils import prices, qty_to_make_products
+commodity_list = ["land", "wheat", "bread", "strawberry", "chicken", "egg"]
+
+prices = { name: 1 for name in commodity_list }
+
+qty_to_make_products = { name: { "total": 0 } for name in commodity_list }
 
 class Commodity():
     def __init__(self, type, name, qty=0):
@@ -29,6 +33,12 @@ class TypeTwo(Commodity):  # non-edible
 class TypeThree(Commodity): # replenishable and non-edible
     def __init__(self, name):
         super().__init__("type_three", name)
+
+
+class TypeFour(Commodity): # doesn't comsume it's resources
+    def __init__(self, nutrition_value, name):
+        super().__init__("type_four", name)
+        self.nutrition_value = nutrition_value
 
 
 class Land(TypeThree):
@@ -62,7 +72,7 @@ class Wheat(TypeTwo):
         self.production_values = {
             "land": {
                 "qty_used": 16,
-                "commodity_produced": 256,
+                "commodity_produced": 128,
                 "reuse_time": 2
             }
         }
@@ -74,7 +84,7 @@ class Bread(TypeOne):
         self.production_values = {
             "wheat": {
                 "qty_used": 192,
-                "commodity_produced": 24
+                "commodity_produced": 12 # one loaf
             }
         }
 
@@ -85,8 +95,33 @@ class Strawberry(TypeOne):
         self.production_values = {
             "land": {
                 "qty_used": 16,
-                "commodity_produced": 64,
+                "commodity_produced": 32,
                 "reuse_time": 2
+            }
+        }
+
+class Chicken(TypeOne):
+    def __init__(self):
+        super().__init__(16, "chicken")
+        self.production_values = {
+            "land": {
+                "qty_used": 8,
+                "commodity_produced": 4,
+                "reuse_time": 4
+            },
+            "wheat": {
+                "qty_used": 64,
+                "commodity_produced": 4 # one chicken
+            }
+        }
+
+class Egg(TypeFour):
+    def __init__(self):
+        super().__init__(8, "egg")
+        self.production_values = {
+            "chicken": {
+                "qty_used": 4,
+                "commodity_produced": 1
             }
         }
 
@@ -94,5 +129,29 @@ commodities = {
     "land": Land,
     "wheat": Wheat,
     "bread": Bread,
-    "strawberry": Strawberry
+    "strawberry": Strawberry,
+    "chicken": Chicken,
+    "egg": Egg
 }
+
+commodities_to_start = []
+
+def get_commodity_to_start(agent_name):
+    if len(commodities_to_start) > 0:
+        return commodities_to_start[agent_name % len(commodities_to_start)]
+
+    for name, instance in commodities.items():
+        new_instance = instance()
+        available_to_add = True
+
+        if new_instance.type != "type_three":
+            for pv_name in list(new_instance.production_values):
+                if pv_name != "land":
+                    available_to_add = False
+        else:
+            available_to_add = False
+
+        if available_to_add:
+            commodities_to_start.append(name)
+    
+    return commodities_to_start[agent_name % len(commodities_to_start)]
